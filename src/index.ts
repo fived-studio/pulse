@@ -1,0 +1,21 @@
+import { app } from "./server";
+import { env } from "./env";
+
+const server = Bun.serve({
+  port: env.PORT,
+  fetch: app.fetch,
+  idleTimeout: 60,
+});
+
+console.log(`▲ Pulse listening on ${server.url}`);
+console.log(`  health: ${server.url}admin/health`);
+console.log(`  events: ${server.url}v1/events`);
+console.log(`  stream: ${server.url}v1/stream/events`);
+
+const shutdown = (sig: string) => {
+  console.log(`\n[server] received ${sig}, shutting down`);
+  server.stop();
+  process.exit(0);
+};
+process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("SIGTERM", () => shutdown("SIGTERM"));
