@@ -14,8 +14,6 @@ const schema = z.object({
   GITHUB_APP_CLIENT_ID: z.string().optional(),
   GITHUB_APP_CLIENT_SECRET: z.string().optional(),
 
-  ANTHROPIC_API_KEY: z.string().optional(),
-
   ADMIN_PASSWORD: z.string().optional(),
 
   FIVED_ORG: z.string().default("fived-studio"),

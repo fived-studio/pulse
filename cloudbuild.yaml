@@ -54,7 +54,7 @@ steps:
           --concurrency=200
           --timeout=3600
           --set-env-vars=NODE_ENV=production,FIVED_ORG=fived-studio
-          --set-secrets=DATABASE_URL=pulse-database-url:latest,REDIS_URL=pulse-redis-url:latest,GITHUB_APP_ID=pulse-github-app-id:latest,GITHUB_APP_PRIVATE_KEY=pulse-github-app-private-key:latest,GITHUB_APP_WEBHOOK_SECRET=pulse-github-webhook-secret:latest,GITHUB_APP_CLIENT_ID=pulse-github-client-id:latest,GITHUB_APP_CLIENT_SECRET=pulse-github-client-secret:latest,ADMIN_PASSWORD=pulse-admin-password:latest,ANTHROPIC_API_KEY=pulse-anthropic-api-key:latest
+          --set-secrets=DATABASE_URL=pulse-database-url:latest,REDIS_URL=pulse-redis-url:latest,GITHUB_APP_ID=pulse-github-app-id:latest,GITHUB_APP_PRIVATE_KEY=pulse-github-app-private-key:latest,GITHUB_APP_WEBHOOK_SECRET=pulse-github-webhook-secret:latest,GITHUB_APP_CLIENT_ID=pulse-github-client-id:latest,GITHUB_APP_CLIENT_SECRET=pulse-github-client-secret:latest,ADMIN_PASSWORD=pulse-admin-password:latest
         )
         if [[ -n "${_VPC_CONNECTOR}" ]]; then
           FLAGS+=(--vpc-connector=${_VPC_CONNECTOR} --vpc-egress=private-ranges-only)
