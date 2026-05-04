@@ -1,9 +1,18 @@
 import { Hono } from "hono";
 import { basicAuth } from "hono/basic-auth";
-import { sql } from "drizzle-orm";
+import { sql, eq } from "drizzle-orm";
 import { db } from "~/db";
-import { redis } from "~/lib/redis";
+import { redis, STREAM_KEY } from "~/lib/redis";
 import { env } from "~/env";
+import { events, members, repos } from "~/db/schema";
+
+const FIVED_MEMBERS = [
+  { githubLogin: "hgbaooo", displayName: "Huỳnh Gia Bảo", role: "Fullstack Engineer" },
+  { githubLogin: "nquynqthanq", displayName: "Nguyễn Quốc Thắng", role: "Frontend · UI/UX" },
+  { githubLogin: "thvnhtai", displayName: "Nguyễn Thành Tài", role: "Frontend · UI/UX" },
+  { githubLogin: "sloweyyy", displayName: "Trương Lê Vĩnh Phúc", role: "Product · DevOps · Fullstack" },
+  { githubLogin: "TrTueTah", displayName: "Trần Tuệ Tánh", role: "Fullstack Engineer" },
+];
 
 export const adminRoute = new Hono()
   .use("*", async (c, next) => {
@@ -31,4 +40,82 @@ export const adminRoute = new Hono()
         (select count(*) from events)::int as events`,
     )) as Array<{ members: number; repos: number; events: number }>;
     return c.json({ ok: true, counts });
+  })
+  .post("/seed", async (c) => {
+    const inserted = await db
+      .insert(members)
+      .values(
+        FIVED_MEMBERS.map((m, i) => ({
+          githubId: 1_000_000 + i,
+          githubLogin: m.githubLogin,
+          displayName: m.displayName,
+          role: m.role,
+          avatarUrl: `https://github.com/${m.githubLogin}.png`,
+        })),
+      )
+      .onConflictDoNothing({ target: members.githubLogin })
+      .returning({ login: members.githubLogin });
+    return c.json({ ok: true, inserted: inserted.map((r) => r.login) });
+  })
+  .post("/test-event", async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as {
+      login?: string;
+      type?: string;
+      summary?: string;
+      repo?: string;
+    };
+    const login = body.login ?? "sloweyyy";
+    const type = body.type ?? "push";
+    const repoName = body.repo ?? "fived-studio/pulse";
+    const summary = body.summary ?? `pushed a test event to ${repoName}`;
+
+    const [member] = await db.select().from(members).where(eq(members.githubLogin, login));
+    if (!member) return c.json({ error: "member_not_found", hint: "POST /admin/seed first" }, 404);
+
+    const [repo] = await db
+      .insert(repos)
+      .values({
+        githubId: Math.floor(Math.random() * 1_000_000_000) + 2_000_000_000,
+        fullName: repoName,
+        isFivedOwned: repoName.startsWith("fived-studio/"),
+        isMemberOwned: !repoName.startsWith("fived-studio/"),
+        lastActiveAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: repos.fullName,
+        set: { lastActiveAt: new Date() },
+      })
+      .returning();
+
+    const occurredAt = new Date();
+    const [row] = await db
+      .insert(events)
+      .values({
+        deliveryId: `test-${crypto.randomUUID()}`,
+        source: "webhook",
+        eventType: type,
+        memberId: member.id,
+        repoId: repo!.id,
+        occurredAt,
+        payload: { test: true, body },
+        summary,
+      })
+      .returning();
+
+    await redis.xadd(
+      STREAM_KEY,
+      "*",
+      "member",
+      login,
+      "type",
+      type,
+      "repo",
+      repoName,
+      "summary",
+      summary,
+      "occurredAt",
+      occurredAt.toISOString(),
+    );
+
+    return c.json({ ok: true, event: row });
   });
