@@ -55,13 +55,11 @@ async function tick() {
         console.error("[poll] member failed", { login: m.githubLogin, err: String(err) });
       }
     }
-    if (total > 0) {
-      console.log("[poll] tick complete", {
-        members: tracked.length,
-        ingested: total,
-        durationMs: Date.now() - start,
-      });
-    }
+    console.log("[poll] tick complete", {
+      members: tracked.length,
+      ingested: total,
+      durationMs: Date.now() - start,
+    });
   } catch (err) {
     console.error("[poll] tick failed", err);
   } finally {

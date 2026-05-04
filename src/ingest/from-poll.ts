@@ -111,12 +111,17 @@ function normalizePolled(ev: GhEvent, repoFullName: string) {
   switch (ev.type) {
     case "PushEvent": {
       const ref = String(p.ref ?? "").replace("refs/heads/", "") || "?";
-      const commits = (p.commits as unknown[]) ?? [];
+      // GitHub's events API truncates the commits array but reports the real
+      // count in distinct_size / size. Prefer those.
+      const distinct = Number(p.distinct_size ?? 0);
+      const size = Number(p.size ?? 0);
+      const arr = (p.commits as unknown[]) ?? [];
+      const n = distinct || size || arr.length;
       return {
         eventType: "push",
-        summary: `${commits.length} commit${commits.length === 1 ? "" : "s"} pushed to ${repoFullName} (${ref})`,
+        summary: `${n} commit${n === 1 ? "" : "s"} pushed to ${repoFullName} (${ref})`,
         occurredAt,
-        commitCount: commits.length,
+        commitCount: n,
       };
     }
     case "PullRequestEvent": {
