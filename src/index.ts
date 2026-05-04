@@ -1,11 +1,14 @@
 import { app } from "./server";
 import { env } from "./env";
+import { startPoller } from "./workers/poll";
 
 const server = Bun.serve({
   port: env.PORT,
   fetch: app.fetch,
   idleTimeout: 60,
 });
+
+startPoller();
 
 console.log(`▲ Pulse listening on ${server.url}`);
 console.log(`  health: ${server.url}admin/health`);
