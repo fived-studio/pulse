@@ -1,11 +1,42 @@
 import { Hono } from "hono";
-import { sql, gte } from "drizzle-orm";
+import { and, eq, gte, sql } from "drizzle-orm";
 import { db } from "~/db";
-import { events } from "~/db/schema";
+import { events, members } from "~/db/schema";
 
 export const totalsRoute = new Hono().get("/", async (c) => {
   const days = Math.min(Number(c.req.query("days") ?? 30), 365);
+  const memberLogin = c.req.query("member");
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+  let memberId: string | undefined;
+  if (memberLogin) {
+    const [m] = await db
+      .select({ id: members.id })
+      .from(members)
+      .where(eq(members.githubLogin, memberLogin));
+    if (!m) {
+      return c.json({
+        data: {
+          windowDays: days,
+          since: since.toISOString(),
+          member: memberLogin,
+          total: 0,
+          prsMerged: 0,
+          prsOpened: 0,
+          reviews: 0,
+          pushes: 0,
+          reposTouched: 0,
+          activeMembers: 0,
+        },
+      });
+    }
+    memberId = m.id;
+  }
+
+  const conds = [
+    gte(events.occurredAt, since),
+    memberId ? eq(events.memberId, memberId) : undefined,
+  ].filter((v): v is NonNullable<typeof v> => v !== undefined);
 
   const [row] = await db
     .select({
@@ -18,12 +49,13 @@ export const totalsRoute = new Hono().get("/", async (c) => {
       activeMembers: sql<number>`count(distinct ${events.memberId})::int`,
     })
     .from(events)
-    .where(gte(events.occurredAt, since));
+    .where(and(...conds));
 
   return c.json({
     data: {
       windowDays: days,
       since: since.toISOString(),
+      ...(memberLogin ? { member: memberLogin } : {}),
       ...row,
     },
   });
