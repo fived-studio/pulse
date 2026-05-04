@@ -1,179 +1,136 @@
-# pulse
+<div align="center">
 
-The backend for **FiveD Pulse** — live engineering platform for FiveD Studio.
+# Pulse
 
-Ingests GitHub webhook + polled events from the FiveD org and each member's
-personal repos, normalizes them, persists to Postgres, and fans out to live
-clients via Server-Sent Events.
+**The live engineering platform for [FiveD Studio](https://fived-studio.github.io).**
 
-## Stack
+Ingests GitHub webhooks across the studio's repos, normalizes them into a
+Postgres event stream, and fans them out to clients in real time over SSE.
 
-Bun · Hono · Drizzle · Postgres · Redis · GitHub App · Anthropic SDK (later) ·
-Google Cloud Run · Docker.
+[![Build](https://img.shields.io/github/actions/workflow/status/fived-studio/pulse/cloudbuild.yml?branch=main&style=flat-square&label=build)](https://github.com/fived-studio/pulse/actions)
+[![Bun](https://img.shields.io/badge/Bun-1.3-000?style=flat-square&logo=bun&logoColor=fbf0df)](https://bun.sh)
+[![Hono](https://img.shields.io/badge/Hono-4-ff5722?style=flat-square)](https://hono.dev)
+[![Postgres](https://img.shields.io/badge/Postgres-16-336791?style=flat-square&logo=postgresql&logoColor=fff)](https://www.postgresql.org)
+[![Cloud Run](https://img.shields.io/badge/Cloud%20Run-deployed-4285f4?style=flat-square&logo=googlecloud&logoColor=fff)](https://cloud.google.com/run)
 
-## Layout
+</div>
+
+## What it does
+
+GitHub webhooks land at `POST /webhook/github`, get HMAC-verified, and flow
+through a single ingest pipeline:
 
 ```
-src/
-├── index.ts              # entrypoint (Bun.serve)
-├── server.ts             # Hono app + middleware + route mounting
-├── env.ts                # zod-validated env
-├── db/
-│   ├── index.ts          # drizzle client
-│   └── schema.ts         # all tables
-├── ingest/
-│   └── from-webhook.ts   # normalize GitHub webhook → event row → redis stream
-├── lib/
-│   ├── redis.ts          # ioredis clients + stream key constant
-│   └── sse.ts            # SSE attach + redis-stream broadcast loop
-├── routes/
-│   ├── admin.ts          # /admin/health, /admin/metrics  (basic-auth)
-│   ├── webhook/
-│   │   └── github.ts     # POST /webhook/github  (HMAC verified)
-│   └── v1/
-│       ├── members.ts    # GET /v1/members, /v1/members/:login(/events)
-│       ├── events.ts     # GET /v1/events
-│       ├── totals.ts     # GET /v1/totals?days=30
-│       └── stream.ts     # GET /v1/stream/events  (SSE)
-└── workers/
-    └── poll.ts           # 60s polling worker (M2 stub)
+GitHub App webhook ─► HMAC verify ─► normalize ─► Postgres (events)
+                                              ╰─► Redis stream ─► SSE clients
+                                              ╰─► daily rollup (member_daily)
 ```
 
-## Local setup
+The same shape works for both organisation events (today) and per-member
+contributions polled from the GitHub GraphQL API (next).
+
+## Highlights
+
+- **Real-time fan-out.** A Redis stream backs SSE so multiple Cloud Run instances broadcast consistently and reconnecting clients catch up cleanly.
+- **Idempotent ingest.** Webhook delivery IDs are unique-keyed; redeliveries no-op. Repo upserts target `full_name` so restored or migrated repos converge.
+- **Schema-first.** Drizzle migrations live in `drizzle/`; one file describes every table the app reads or writes.
+- **Bun + Hono.** Sub-second cold starts, ~50ms p50 for read endpoints, single-file route registration.
+- **Trace anything.** Every drop path in the ingest logs structured JSON, so silence from a webhook is debuggable from logs alone.
+
+## Quick start
 
 ```bash
-cp .env.example .env
-# fill in DATABASE_URL, REDIS_URL at minimum
+brew install postgresql@16 redis
+brew services start postgresql@16
+brew services start redis
+createuser -s pulse && createdb pulse -O pulse
 
+cp .env.example .env       # set DATABASE_URL + REDIS_URL
 bun install
 bun run db:generate
 bun run db:migrate
 bun run dev
 ```
 
-Server is at `http://localhost:8787`.
+Server boots on <http://localhost:8787>. Smoke test:
 
 ```bash
-curl http://localhost:8787/admin/health -u admin:$ADMIN_PASSWORD
+curl -u admin:$ADMIN_PASSWORD http://localhost:8787/admin/health
 curl http://localhost:8787/v1/events
-curl -N http://localhost:8787/v1/stream/events    # SSE
+curl -N http://localhost:8787/v1/stream/events
 ```
 
-### Postgres + Redis on Mac
+## API
 
-```bash
-brew install postgresql@16 redis
-brew services start postgresql@16
-brew services start redis
-createuser -s pulse
-createdb pulse -O pulse
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/` | service banner |
+| `GET` | `/v1/members` | team list |
+| `GET` | `/v1/members/:login` | profile + last 20 events |
+| `GET` | `/v1/members/:login/events?limit=` | per-member event history |
+| `GET` | `/v1/events?limit=&before=&member=` | global event feed |
+| `GET` | `/v1/totals?days=` | rollup counters |
+| `GET` | `/v1/heatmap?days=&member=` | daily contribution timeline |
+| `GET` | `/v1/stream/events?member=` (SSE) | real-time event push |
+| `POST` | `/webhook/github` | GitHub App delivery target (HMAC) |
+| `GET` | `/admin/health` | DB + Redis liveness |
+| `GET` | `/admin/metrics` | row counts (basic auth) |
+| `POST` | `/admin/seed` | seed founding-member roster (basic auth) |
+| `POST` | `/admin/test-event` | inject a fake event onto the live stream (basic auth) |
+
+## Project layout
+
+```
+src/
+  index.ts              # Bun.serve entrypoint
+  server.ts             # Hono app + middleware + route mount
+  env.ts                # zod-validated env
+  db/
+    index.ts            # drizzle client (auto-detects Cloud SQL Unix socket)
+    schema.ts           # tables: members, repos, events, member_daily, ...
+  ingest/
+    from-webhook.ts     # webhook → event row → redis stream → daily rollup
+  lib/
+    redis.ts            # ioredis clients + stream key
+    sse.ts              # SSE attach + redis-stream broadcast loop
+  routes/
+    admin.ts            # /admin/*
+    webhook/github.ts   # HMAC-verified GitHub App webhook
+    v1/{members,events,totals,heatmap,stream}.ts
+  workers/
+    poll.ts             # GraphQL polling worker (M2)
+drizzle/                # migrations
+cloudbuild.yaml         # CI pipeline → Cloud Run
+Dockerfile              # Bun multi-stage build
 ```
 
-## Webhook testing without GitHub
+## Stack
 
-Use `smee.io` to forward a real GitHub App webhook to localhost, or post a
-manually-crafted payload (HMAC must match `GITHUB_APP_WEBHOOK_SECRET`).
+Bun · Hono · Drizzle · Postgres 16 · Redis 7 · GitHub App · Google Cloud Run · Docker.
 
-## Deploy (Google Cloud Run)
+## Deploy
 
-The app is a stateless container that listens on `$PORT`. Cloud Run injects
-`PORT=8080`, scales to zero (we pin `min-instances=1` so the SSE redis-stream
-consumer stays warm), and supports HTTP/2 streaming for SSE up to 60 minutes
-per request.
+The production deployment runs on **Google Cloud Run** with **Cloud SQL** for
+Postgres, **Memorystore** for Redis, and a **Cloud Build trigger** on push to
+`main` that builds the image, pushes to Artifact Registry, and rolls a new
+revision. Secrets are bound via Secret Manager.
 
-### One-time GCP setup
-
-```bash
-PROJECT=fived-pulse
-REGION=asia-southeast1
-REPO=pulse
-SERVICE=fived-pulse
-
-gcloud config set project $PROJECT
-gcloud services enable \
-  run.googleapis.com \
-  cloudbuild.googleapis.com \
-  artifactregistry.googleapis.com \
-  secretmanager.googleapis.com \
-  sqladmin.googleapis.com \
-  redis.googleapis.com \
-  vpcaccess.googleapis.com
-
-# Artifact Registry (Docker images)
-gcloud artifacts repositories create $REPO \
-  --repository-format=docker --location=$REGION
-
-# Cloud SQL (Postgres 16)
-gcloud sql instances create pulse-pg \
-  --database-version=POSTGRES_16 --tier=db-f1-micro --region=$REGION
-gcloud sql databases create pulse --instance=pulse-pg
-gcloud sql users create pulse --instance=pulse-pg --password='<gen>'
-
-# Memorystore (Redis) — requires a Serverless VPC connector for Cloud Run
-gcloud redis instances create pulse-redis --size=1 --region=$REGION \
-  --redis-version=redis_7_0
-gcloud compute networks vpc-access connectors create pulse-vpc \
-  --region=$REGION --network=default --range=10.8.0.0/28
-```
-
-### Secrets
-
-Push every secret in `.env.example` (other than `PORT` / `NODE_ENV`) to Secret
-Manager. The names referenced by `cloudbuild.yaml`:
-
-```bash
-for s in pulse-database-url pulse-redis-url pulse-github-app-id \
-         pulse-github-app-private-key pulse-github-webhook-secret \
-         pulse-github-client-id pulse-github-client-secret \
-         pulse-admin-password pulse-anthropic-api-key; do
-  gcloud secrets create $s --replication-policy=automatic
-done
-
-# example: load a value from a local file or stdin
-printf '%s' "$DATABASE_URL" | gcloud secrets versions add pulse-database-url --data-file=-
-gcloud secrets versions add pulse-github-app-private-key --data-file=key.pem
-```
-
-`pulse-anthropic-api-key` may be set to an empty string — it is unused until
-the M3 AI layer ships.
-
-Grant Cloud Run's runtime service account access:
-
-```bash
-RUNTIME_SA=$(gcloud iam service-accounts list \
-  --filter='displayName:Compute Engine default service account' \
-  --format='value(email)')
-for s in pulse-database-url pulse-redis-url pulse-github-app-id \
-         pulse-github-app-private-key pulse-github-webhook-secret \
-         pulse-github-client-id pulse-github-client-secret \
-         pulse-admin-password pulse-anthropic-api-key; do
-  gcloud secrets add-iam-policy-binding $s \
-    --member=serviceAccount:$RUNTIME_SA \
-    --role=roles/secretmanager.secretAccessor
-done
-```
-
-### Deploy
-
-```bash
-CLOUDSQL=$(gcloud sql instances describe pulse-pg --format='value(connectionName)')
-
-gcloud builds submit --config=cloudbuild.yaml \
-  --substitutions=_REGION=$REGION,_REPO=$REPO,_SERVICE=$SERVICE,_VPC_CONNECTOR=pulse-vpc,_CLOUDSQL=$CLOUDSQL
-```
-
-Point the GitHub App webhook at the Cloud Run URL `gcloud run services
-describe $SERVICE --region=$REGION --format='value(status.url)'` plus
-`/webhook/github`.
+Full step-by-step infrastructure setup lives in [`docs/DEPLOY.md`](docs/DEPLOY.md).
 
 ## Roadmap
 
 | Milestone | Status |
 |---|---|
-| M0 plumbing — server, schema, webhook accept | ✅ scaffolded |
-| M1 org-only MVP — webhook ingest, read API, SSE | 🟡 ingest done, member onboarding TBD |
-| M2 personal aggregation — OAuth, polling worker | ⏳ |
-| M3 AI layer — bios, significance, Wrapped | ⏳ |
-| M4 polish — OG, /live filters, docs | ⏳ |
+| M0 — server, schema, webhook accept | ✅ |
+| M1 — webhook ingest, read API, SSE, daily rollup | ✅ |
+| M2 — OAuth member onboarding, polling worker | 🟡 in progress |
+| M3 — polish: OG images, /live filters, status page | ⏳ |
+| M4 — launch | ⏳ |
 
-See the PRD: `~/.gstack/projects/fived-studio/sloweyyy-main-design-20260503-fived-pulse-v2.md`.
+The AI layer (member bios, event significance, Wrapped) was originally on the
+roadmap but has been deferred indefinitely. The schema retains the
+`member_bios` and `wrappeds` tables but no code path writes to them.
+
+## License
+
+Proprietary. © FiveD Studio.
