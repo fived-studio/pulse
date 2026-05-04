@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { eq, gte, sql } from "drizzle-orm";
+import { and, eq, gte, sql } from "drizzle-orm";
 import { db } from "~/db";
 import { events, members } from "~/db/schema";
 
@@ -37,7 +37,7 @@ export const badgeRoute = new Hono().get("/:slug", async (c) => {
   const [row] = await db
     .select({ total: sql<number>`count(*)::int` })
     .from(events)
-    .where(sql`${events.memberId} = ${m.id} AND ${events.occurredAt} >= ${since}`);
+    .where(and(eq(events.memberId, m.id), gte(events.occurredAt, since)));
 
   const total = row?.total ?? 0;
   const value = `${total} event${total === 1 ? "" : "s"} / 30d`;
