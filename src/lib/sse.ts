@@ -11,7 +11,12 @@ export type LiveEvent = {
   occurredAt: string;
 };
 
-const subscribers = new Set<SSEStreamingApi>();
+type Subscriber = {
+  stream: SSEStreamingApi;
+  filterMember?: string;
+};
+
+const subscribers = new Set<Subscriber>();
 let pollerStarted = false;
 
 function startRedisPoller() {
@@ -62,25 +67,26 @@ function parseRedisFields(fields: string[]): Record<string, string> {
 }
 
 async function broadcast(ev: LiveEvent) {
-  for (const s of subscribers) {
+  for (const sub of subscribers) {
+    if (sub.filterMember && sub.filterMember !== ev.member) continue;
     try {
-      await s.writeSSE({
+      await sub.stream.writeSSE({
         event: "pulse.event",
         id: ev.id,
         data: JSON.stringify(ev),
       });
     } catch {
-      subscribers.delete(s);
+      subscribers.delete(sub);
     }
   }
 }
 
 async function broadcastKeepAlive() {
-  for (const s of subscribers) {
+  for (const sub of subscribers) {
     try {
-      await s.writeSSE({ event: "ping", data: String(Date.now()) });
+      await sub.stream.writeSSE({ event: "ping", data: String(Date.now()) });
     } catch {
-      subscribers.delete(s);
+      subscribers.delete(sub);
     }
   }
 }
@@ -88,9 +94,10 @@ async function broadcastKeepAlive() {
 export function attachSSE(c: Context, filterMember?: string) {
   startRedisPoller();
   return streamSSE(c, async (stream) => {
-    subscribers.add(stream);
+    const sub: Subscriber = { stream, filterMember };
+    subscribers.add(sub);
     stream.onAbort(() => {
-      subscribers.delete(stream);
+      subscribers.delete(sub);
     });
 
     await stream.writeSSE({
