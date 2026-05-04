@@ -7,7 +7,6 @@
 Ingests GitHub webhooks across the studio's repos, normalizes them into a
 Postgres event stream, and fans them out to clients in real time over SSE.
 
-[![Build](https://img.shields.io/github/actions/workflow/status/fived-studio/pulse/cloudbuild.yml?branch=main&style=flat-square&label=build)](https://github.com/fived-studio/pulse/actions)
 [![Bun](https://img.shields.io/badge/Bun-1.3-000?style=flat-square&logo=bun&logoColor=fbf0df)](https://bun.sh)
 [![Hono](https://img.shields.io/badge/Hono-4-ff5722?style=flat-square)](https://hono.dev)
 [![Postgres](https://img.shields.io/badge/Postgres-16-336791?style=flat-square&logo=postgresql&logoColor=fff)](https://www.postgresql.org)
