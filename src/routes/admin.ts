@@ -72,10 +72,14 @@ export const adminRoute = new Hono()
     const [member] = await db.select().from(members).where(eq(members.githubLogin, login));
     if (!member) return c.json({ error: "member_not_found", hint: "POST /admin/seed first" }, 404);
 
+    // Use a deterministic fake id derived from the repo name so re-runs don't
+    // pile up bogus rows. Real github IDs fit in 32-bit; we pick from 2^31+.
+    let hash = 2_147_483_648;
+    for (const ch of repoName) hash = ((hash * 31 + ch.charCodeAt(0)) >>> 0) + 2_147_483_648;
     const [repo] = await db
       .insert(repos)
       .values({
-        githubId: Math.floor(Math.random() * 1_000_000_000) + 2_000_000_000,
+        githubId: hash,
         fullName: repoName,
         isFivedOwned: repoName.startsWith("fived-studio/"),
         isMemberOwned: !repoName.startsWith("fived-studio/"),

@@ -13,8 +13,8 @@ substitutions:
   _REGION: asia-southeast1
   _REPO: pulse
   _SERVICE: fived-pulse
-  _VPC_CONNECTOR: ""
-  _CLOUDSQL: ""
+  _VPC_CONNECTOR: pulse-vpc
+  _CLOUDSQL: fived-pulse-1068:asia-southeast1:pulse-pg
 
 steps:
   - id: build

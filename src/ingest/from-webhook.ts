@@ -64,8 +64,9 @@ export async function ingestEvent({ deliveryId, name, payload }: Args) {
       lastActiveAt: new Date(),
     })
     .onConflictDoUpdate({
-      target: repos.githubId,
+      target: repos.fullName,
       set: {
+        githubId: repoGithubId,
         lastActiveAt: new Date(),
         ...(repoStars !== undefined ? { stars: repoStars } : {}),
         ...(repoLang ? { primaryLang: repoLang } : {}),
