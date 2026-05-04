@@ -1,6 +1,6 @@
 import { db } from "~/db";
-import { events, members, repos } from "~/db/schema";
-import { eq } from "drizzle-orm";
+import { events, memberDaily, members, repos } from "~/db/schema";
+import { eq, sql } from "drizzle-orm";
 import { redis, STREAM_KEY } from "~/lib/redis";
 
 type Args = {
@@ -108,6 +108,8 @@ export async function ingestEvent({ deliveryId, name, payload }: Args) {
 
   if (!row) return; // duplicate delivery, already ingested
 
+  await bumpDailyRollup(member.id, occurredAt, eventType, payload);
+
   await redis.xadd(
     STREAM_KEY,
     "*",
@@ -122,6 +124,40 @@ export async function ingestEvent({ deliveryId, name, payload }: Args) {
     "occurredAt",
     occurredAt.toISOString(),
   );
+}
+
+async function bumpDailyRollup(
+  memberId: string,
+  occurredAt: Date,
+  eventType: string,
+  payload: any,
+) {
+  const day = occurredAt.toISOString().slice(0, 10); // YYYY-MM-DD
+  const delta = {
+    prsOpened: eventType === "pr_opened" ? 1 : 0,
+    prsMerged: eventType === "pr_merged" ? 1 : 0,
+    commits: eventType === "push" ? Number(payload?.commits?.length ?? 0) : 0,
+    reviews: eventType === "pr_review" ? 1 : 0,
+    linesAdded:
+      eventType === "pr_merged" ? Number(payload?.pull_request?.additions ?? 0) : 0,
+    linesRemoved:
+      eventType === "pr_merged" ? Number(payload?.pull_request?.deletions ?? 0) : 0,
+  };
+
+  await db
+    .insert(memberDaily)
+    .values({ memberId, day, ...delta })
+    .onConflictDoUpdate({
+      target: [memberDaily.memberId, memberDaily.day],
+      set: {
+        prsOpened: sql`${memberDaily.prsOpened} + ${delta.prsOpened}`,
+        prsMerged: sql`${memberDaily.prsMerged} + ${delta.prsMerged}`,
+        commits: sql`${memberDaily.commits} + ${delta.commits}`,
+        reviews: sql`${memberDaily.reviews} + ${delta.reviews}`,
+        linesAdded: sql`${memberDaily.linesAdded} + ${delta.linesAdded}`,
+        linesRemoved: sql`${memberDaily.linesRemoved} + ${delta.linesRemoved}`,
+      },
+    });
 }
 
 function normalize(

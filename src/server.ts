@@ -6,6 +6,7 @@ import { secureHeaders } from "hono/secure-headers";
 import { membersRoute } from "~/routes/v1/members";
 import { eventsRoute } from "~/routes/v1/events";
 import { totalsRoute } from "~/routes/v1/totals";
+import { heatmapRoute } from "~/routes/v1/heatmap";
 import { streamRoute } from "~/routes/v1/stream";
 import { githubWebhookRoute } from "~/routes/webhook/github";
 import { adminRoute } from "~/routes/admin";
@@ -34,6 +35,7 @@ app.get("/", (c) =>
 app.route("/v1/members", membersRoute);
 app.route("/v1/events", eventsRoute);
 app.route("/v1/totals", totalsRoute);
+app.route("/v1/heatmap", heatmapRoute);
 app.route("/v1/stream", streamRoute);
 app.route("/webhook/github", githubWebhookRoute);
 app.route("/admin", adminRoute);
