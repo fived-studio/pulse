@@ -9,7 +9,7 @@ clients via Server-Sent Events.
 ## Stack
 
 Bun · Hono · Drizzle · Postgres · Redis · GitHub App · Anthropic SDK (later) ·
-Fly.io · Docker.
+Google Cloud Run · Docker.
 
 ## Layout
 
@@ -74,17 +74,97 @@ createdb pulse -O pulse
 Use `smee.io` to forward a real GitHub App webhook to localhost, or post a
 manually-crafted payload (HMAC must match `GITHUB_APP_WEBHOOK_SECRET`).
 
-## Deploy (Fly.io)
+## Deploy (Google Cloud Run)
+
+The app is a stateless container that listens on `$PORT`. Cloud Run injects
+`PORT=8080`, scales to zero (we pin `min-instances=1` so the SSE redis-stream
+consumer stays warm), and supports HTTP/2 streaming for SSE up to 60 minutes
+per request.
+
+### One-time GCP setup
 
 ```bash
-fly launch --no-deploy        # creates fly app from fly.toml
-fly postgres create            # provision Postgres
-fly redis create               # or use Upstash and set REDIS_URL secret
-fly secrets set GITHUB_APP_ID=... GITHUB_APP_PRIVATE_KEY="$(cat key.pem)" \
-                GITHUB_APP_WEBHOOK_SECRET=... \
-                ANTHROPIC_API_KEY=... ADMIN_PASSWORD=...
-fly deploy
+PROJECT=fived-pulse
+REGION=asia-southeast1
+REPO=pulse
+SERVICE=fived-pulse
+
+gcloud config set project $PROJECT
+gcloud services enable \
+  run.googleapis.com \
+  cloudbuild.googleapis.com \
+  artifactregistry.googleapis.com \
+  secretmanager.googleapis.com \
+  sqladmin.googleapis.com \
+  redis.googleapis.com \
+  vpcaccess.googleapis.com
+
+# Artifact Registry (Docker images)
+gcloud artifacts repositories create $REPO \
+  --repository-format=docker --location=$REGION
+
+# Cloud SQL (Postgres 16)
+gcloud sql instances create pulse-pg \
+  --database-version=POSTGRES_16 --tier=db-f1-micro --region=$REGION
+gcloud sql databases create pulse --instance=pulse-pg
+gcloud sql users create pulse --instance=pulse-pg --password='<gen>'
+
+# Memorystore (Redis) — requires a Serverless VPC connector for Cloud Run
+gcloud redis instances create pulse-redis --size=1 --region=$REGION \
+  --redis-version=redis_7_0
+gcloud compute networks vpc-access connectors create pulse-vpc \
+  --region=$REGION --network=default --range=10.8.0.0/28
 ```
+
+### Secrets
+
+Push every secret in `.env.example` (other than `PORT` / `NODE_ENV`) to Secret
+Manager. The names referenced by `cloudbuild.yaml`:
+
+```bash
+for s in pulse-database-url pulse-redis-url pulse-github-app-id \
+         pulse-github-app-private-key pulse-github-webhook-secret \
+         pulse-github-client-id pulse-github-client-secret \
+         pulse-admin-password pulse-anthropic-api-key; do
+  gcloud secrets create $s --replication-policy=automatic
+done
+
+# example: load a value from a local file or stdin
+printf '%s' "$DATABASE_URL" | gcloud secrets versions add pulse-database-url --data-file=-
+gcloud secrets versions add pulse-github-app-private-key --data-file=key.pem
+```
+
+`pulse-anthropic-api-key` may be set to an empty string — it is unused until
+the M3 AI layer ships.
+
+Grant Cloud Run's runtime service account access:
+
+```bash
+RUNTIME_SA=$(gcloud iam service-accounts list \
+  --filter='displayName:Compute Engine default service account' \
+  --format='value(email)')
+for s in pulse-database-url pulse-redis-url pulse-github-app-id \
+         pulse-github-app-private-key pulse-github-webhook-secret \
+         pulse-github-client-id pulse-github-client-secret \
+         pulse-admin-password pulse-anthropic-api-key; do
+  gcloud secrets add-iam-policy-binding $s \
+    --member=serviceAccount:$RUNTIME_SA \
+    --role=roles/secretmanager.secretAccessor
+done
+```
+
+### Deploy
+
+```bash
+CLOUDSQL=$(gcloud sql instances describe pulse-pg --format='value(connectionName)')
+
+gcloud builds submit --config=cloudbuild.yaml \
+  --substitutions=_REGION=$REGION,_REPO=$REPO,_SERVICE=$SERVICE,_VPC_CONNECTOR=pulse-vpc,_CLOUDSQL=$CLOUDSQL
+```
+
+Point the GitHub App webhook at the Cloud Run URL `gcloud run services
+describe $SERVICE --region=$REGION --format='value(status.url)'` plus
+`/webhook/github`.
 
 ## Roadmap
 
