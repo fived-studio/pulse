@@ -28,6 +28,13 @@ export async function ingestEvent({ deliveryId, name, payload }: Args) {
   const repoStars: number | undefined = payload?.repository?.stargazers_count;
 
   if (!actorLogin || !repoFullName || !repoGithubId) {
+    console.log("[ingest] dropped: missing fields", {
+      name,
+      deliveryId,
+      actorLogin,
+      repoFullName,
+      repoGithubId,
+    });
     return;
   }
 
@@ -35,31 +42,49 @@ export async function ingestEvent({ deliveryId, name, payload }: Args) {
     .select()
     .from(members)
     .where(eq(members.githubLogin, actorLogin));
-  if (!member) return; // not a tracked member; drop silently
-
-  let [repo] = await db.select().from(repos).where(eq(repos.githubId, repoGithubId));
-  if (!repo) {
-    [repo] = await db
-      .insert(repos)
-      .values({
-        githubId: repoGithubId,
-        fullName: repoFullName,
-        isFivedOwned: repoFullName.startsWith("fived-studio/"),
-        isMemberOwned: !repoFullName.startsWith("fived-studio/"),
-        primaryLang: repoLang,
-        stars: repoStars ?? 0,
-        lastActiveAt: new Date(),
-      })
-      .returning();
-  } else {
-    await db
-      .update(repos)
-      .set({ lastActiveAt: new Date(), stars: repoStars ?? repo.stars })
-      .where(eq(repos.id, repo.id));
+  if (!member) {
+    console.log("[ingest] dropped: unknown member", {
+      name,
+      deliveryId,
+      actorLogin,
+      repoFullName,
+    });
+    return;
   }
 
+  const [repo] = await db
+    .insert(repos)
+    .values({
+      githubId: repoGithubId,
+      fullName: repoFullName,
+      isFivedOwned: repoFullName.startsWith("fived-studio/"),
+      isMemberOwned: !repoFullName.startsWith("fived-studio/"),
+      primaryLang: repoLang,
+      stars: repoStars ?? 0,
+      lastActiveAt: new Date(),
+    })
+    .onConflictDoUpdate({
+      target: repos.githubId,
+      set: {
+        lastActiveAt: new Date(),
+        ...(repoStars !== undefined ? { stars: repoStars } : {}),
+        ...(repoLang ? { primaryLang: repoLang } : {}),
+      },
+    })
+    .returning();
+
   const { eventType, summary, occurredAt } = normalize(name, payload, repoFullName);
-  if (!eventType) return;
+  if (!eventType) {
+    console.log("[ingest] dropped: unhandled event", {
+      name,
+      action: payload?.action,
+      deliveryId,
+      actorLogin,
+      repoFullName,
+    });
+    return;
+  }
+  console.log("[ingest] accepted", { name, eventType, actorLogin, repoFullName, deliveryId });
 
   if (!repo) {
     return; // repo persistence failed — bail safely

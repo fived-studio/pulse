@@ -1,11 +1,11 @@
 FROM oven/bun:1.3-alpine AS deps
 WORKDIR /app
-COPY package.json bun.lockb* ./
+COPY package.json bun.lock* ./
 RUN bun install --frozen-lockfile --production
 
 FROM oven/bun:1.3-alpine AS build
 WORKDIR /app
-COPY package.json bun.lockb* ./
+COPY package.json bun.lock* ./
 RUN bun install --frozen-lockfile
 COPY . .
 RUN bun build src/index.ts --target=bun --outdir=dist --minify
@@ -13,8 +13,9 @@ RUN bun build src/index.ts --target=bun --outdir=dist --minify
 FROM oven/bun:1.3-alpine
 WORKDIR /app
 ENV NODE_ENV=production
+ENV PORT=8080
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY package.json ./
-EXPOSE 8787
+EXPOSE 8080
 CMD ["bun", "run", "dist/index.js"]

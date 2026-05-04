@@ -1,0 +1,72 @@
+# Cloud Build pipeline: build image → push to Artifact Registry → deploy to Cloud Run.
+#
+# Required substitutions (set defaults in the trigger or pass via --substitutions):
+#   _REGION         e.g. asia-southeast1
+#   _REPO           Artifact Registry repo name, e.g. pulse
+#   _SERVICE        Cloud Run service name, e.g. fived-pulse
+#   _VPC_CONNECTOR  Serverless VPC connector for private Cloud SQL + Memorystore
+#   _CLOUDSQL       Cloud SQL instance connection name (project:region:instance)
+#
+# Secrets are read from Secret Manager at deploy time — see --set-secrets below.
+
+substitutions:
+  _REGION: asia-southeast1
+  _REPO: pulse
+  _SERVICE: fived-pulse
+  _VPC_CONNECTOR: ""
+  _CLOUDSQL: ""
+
+steps:
+  - id: build
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:$BUILD_ID
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:latest
+      - .
+
+  - id: push
+    name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - --all-tags
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}
+
+  - id: deploy
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        FLAGS=(
+          --image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:$BUILD_ID
+          --region=${_REGION}
+          --platform=managed
+          --allow-unauthenticated
+          --port=8080
+          --cpu=1
+          --memory=512Mi
+          --min-instances=1
+          --max-instances=10
+          --concurrency=200
+          --timeout=3600
+          --set-env-vars=NODE_ENV=production,FIVED_ORG=fived-studio
+          --set-secrets=DATABASE_URL=pulse-database-url:latest,REDIS_URL=pulse-redis-url:latest,GITHUB_APP_ID=pulse-github-app-id:latest,GITHUB_APP_PRIVATE_KEY=pulse-github-app-private-key:latest,GITHUB_APP_WEBHOOK_SECRET=pulse-github-webhook-secret:latest,GITHUB_APP_CLIENT_ID=pulse-github-client-id:latest,GITHUB_APP_CLIENT_SECRET=pulse-github-client-secret:latest,ADMIN_PASSWORD=pulse-admin-password:latest,ANTHROPIC_API_KEY=pulse-anthropic-api-key:latest
+        )
+        if [[ -n "${_VPC_CONNECTOR}" ]]; then
+          FLAGS+=(--vpc-connector=${_VPC_CONNECTOR} --vpc-egress=private-ranges-only)
+        fi
+        if [[ -n "${_CLOUDSQL}" ]]; then
+          FLAGS+=(--add-cloudsql-instances=${_CLOUDSQL})
+        fi
+        gcloud run deploy ${_SERVICE} "${FLAGS[@]}"
+
+images:
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:$BUILD_ID
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:latest
+
+options:
+  logging: CLOUD_LOGGING_ONLY
