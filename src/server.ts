@@ -10,6 +10,7 @@ import { heatmapRoute } from "~/routes/v1/heatmap";
 import { streamRoute } from "~/routes/v1/stream";
 import { githubWebhookRoute } from "~/routes/webhook/github";
 import { adminRoute } from "~/routes/admin";
+import { badgeRoute } from "~/routes/badge";
 
 export const app = new Hono();
 
@@ -39,6 +40,7 @@ app.route("/v1/heatmap", heatmapRoute);
 app.route("/v1/stream", streamRoute);
 app.route("/webhook/github", githubWebhookRoute);
 app.route("/admin", adminRoute);
+app.route("/badge", badgeRoute);
 
 app.notFound((c) => c.json({ error: "not_found" }, 404));
 app.onError((err, c) => {
