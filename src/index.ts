@@ -1,7 +1,10 @@
 import { app } from "./server";
 import { env } from "./env";
+import { applyMigrations } from "./db/migrate";
 import { startPoller } from "./workers/poll";
 import { startLeetcodePoller } from "./workers/leetcode-poll";
+
+await applyMigrations();
 
 const server = Bun.serve({
   port: env.PORT,
