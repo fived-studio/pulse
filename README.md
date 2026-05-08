@@ -70,12 +70,25 @@ curl -N http://localhost:8787/v1/stream/events
 | `GET` | `/v1/events?limit=&before=&member=` | global event feed |
 | `GET` | `/v1/totals?days=` | rollup counters |
 | `GET` | `/v1/heatmap?days=&member=` | daily contribution timeline |
+| `GET` | `/v1/leetcode/leaderboard?sort=&limit=` | team LeetCode leaderboard (sort: `weighted` (default), `total`, `ranking`, `contest`) |
+| `GET` | `/v1/leetcode/:login` | per-member LeetCode profile snapshot |
 | `GET` | `/v1/stream/events?member=` (SSE) | real-time event push |
 | `POST` | `/webhook/github` | GitHub App delivery target (HMAC) |
 | `GET` | `/admin/health` | DB + Redis liveness |
 | `GET` | `/admin/metrics` | row counts (basic auth) |
 | `POST` | `/admin/seed` | seed founding-member roster (basic auth) |
+| `POST` | `/admin/members/:login/leetcode` | set/clear a member's LeetCode handle (basic auth, body: `{handle}`) |
+| `POST` | `/admin/leetcode/refresh?login=` | force-refresh stats (basic auth) |
 | `POST` | `/admin/test-event` | inject a fake event onto the live stream (basic auth) |
+
+### LeetCode leaderboard
+
+Pulse calls `leetcode.com/graphql` directly — no third-party service in the
+hot path. Members opt in by setting `leetcode_handle` (admin endpoint above);
+a background worker refreshes profile, contest, and language stats every
+`LEETCODE_POLL_INTERVAL_MIN` minutes (default 360 = 6h) and caches results
+in Postgres so the leaderboard endpoint reads from the DB only. Weighted
+score = `easy×1 + medium×2 + hard×4`.
 
 ## Project layout
 

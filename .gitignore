@@ -9,3 +9,4 @@ dist/
 bun.lockb
 drizzle/meta/
 .fly/
+.gstack/

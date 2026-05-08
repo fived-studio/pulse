@@ -4,14 +4,16 @@ import { sql, eq } from "drizzle-orm";
 import { db } from "~/db";
 import { redis, STREAM_KEY } from "~/lib/redis";
 import { env } from "~/env";
-import { events, members, repos } from "~/db/schema";
+import { events, leetcodeStats, members, repos } from "~/db/schema";
+import { tick as leetcodeTick, refreshOne as leetcodeRefreshOne } from "~/workers/leetcode-poll";
+import { LeetcodeNotFoundError } from "~/lib/leetcode";
 
 const FIVED_MEMBERS = [
-  { githubLogin: "hgbaooo", displayName: "Huỳnh Gia Bảo", role: "Fullstack Engineer" },
-  { githubLogin: "nquynqthanq", displayName: "Nguyễn Quốc Thắng", role: "Frontend · UI/UX" },
-  { githubLogin: "thvnhtai", displayName: "Nguyễn Thành Tài", role: "Frontend · UI/UX" },
-  { githubLogin: "sloweyyy", displayName: "Trương Lê Vĩnh Phúc", role: "Product · DevOps · Fullstack" },
-  { githubLogin: "TrTueTah", displayName: "Trần Tuệ Tánh", role: "Fullstack Engineer" },
+  { githubLogin: "hgbaooo", displayName: "Huỳnh Gia Bảo", role: "Fullstack Engineer", leetcodeHandle: "hgbaooo" },
+  { githubLogin: "nquynqthanq", displayName: "Nguyễn Quốc Thắng", role: "Frontend · UI/UX", leetcodeHandle: "nguyqthanq" },
+  { githubLogin: "thvnhtai", displayName: "Nguyễn Thành Tài", role: "Frontend · UI/UX", leetcodeHandle: "thvnhtai" },
+  { githubLogin: "sloweyyy", displayName: "Trương Lê Vĩnh Phúc", role: "Product · DevOps · Fullstack", leetcodeHandle: "slowey" },
+  { githubLogin: "TrTueTah", displayName: "Trần Tuệ Tánh", role: "Fullstack Engineer", leetcodeHandle: "tanhdeptrai113" },
 ];
 
 export const adminRoute = new Hono()
@@ -42,7 +44,7 @@ export const adminRoute = new Hono()
     return c.json({ ok: true, counts });
   })
   .post("/seed", async (c) => {
-    const inserted = await db
+    const upserted = await db
       .insert(members)
       .values(
         FIVED_MEMBERS.map((m, i) => ({
@@ -51,11 +53,16 @@ export const adminRoute = new Hono()
           displayName: m.displayName,
           role: m.role,
           avatarUrl: `https://github.com/${m.githubLogin}.png`,
+          leetcodeHandle: m.leetcodeHandle,
         })),
       )
-      .onConflictDoNothing({ target: members.githubLogin })
-      .returning({ login: members.githubLogin });
-    return c.json({ ok: true, inserted: inserted.map((r) => r.login) });
+      .onConflictDoUpdate({
+        target: members.githubLogin,
+        // backfill leetcode handles on existing rows; don't clobber other fields
+        set: { leetcodeHandle: sql`excluded.leetcode_handle` },
+      })
+      .returning({ login: members.githubLogin, leetcodeHandle: members.leetcodeHandle });
+    return c.json({ ok: true, members: upserted });
   })
   .post("/test-event", async (c) => {
     const body = (await c.req.json().catch(() => ({}))) as {
@@ -122,4 +129,53 @@ export const adminRoute = new Hono()
     );
 
     return c.json({ ok: true, event: row });
+  })
+  .post("/members/:login/leetcode", async (c) => {
+    const login = c.req.param("login");
+    const body = (await c.req.json().catch(() => ({}))) as { handle?: string | null };
+    const handle = body.handle?.trim() || null;
+
+    const [updated] = await db
+      .update(members)
+      .set({ leetcodeHandle: handle })
+      .where(eq(members.githubLogin, login))
+      .returning({ id: members.id, login: members.githubLogin, handle: members.leetcodeHandle });
+    if (!updated) return c.json({ error: "member_not_found" }, 404);
+
+    if (handle === null) {
+      // clearing — drop any cached stats so the leaderboard hides them
+      await db.delete(leetcodeStats).where(eq(leetcodeStats.memberId, updated.id));
+      return c.json({ ok: true, login, handle: null });
+    }
+
+    // refresh now so the leaderboard sees them immediately
+    try {
+      await leetcodeRefreshOne(updated.id, handle);
+      return c.json({ ok: true, login, handle, refreshed: true });
+    } catch (err) {
+      if (err instanceof LeetcodeNotFoundError) {
+        return c.json({ ok: false, login, handle, error: "leetcode_user_not_found" }, 400);
+      }
+      console.error("[admin] leetcode refresh failed", err);
+      return c.json({ ok: true, login, handle, refreshed: false, error: String(err) });
+    }
+  })
+  .post("/leetcode/refresh", async (c) => {
+    const login = c.req.query("login");
+    if (login) {
+      const [m] = await db
+        .select({ id: members.id, handle: members.leetcodeHandle })
+        .from(members)
+        .where(eq(members.githubLogin, login));
+      if (!m) return c.json({ error: "member_not_found" }, 404);
+      if (!m.handle) return c.json({ error: "no_leetcode_handle" }, 400);
+      try {
+        await leetcodeRefreshOne(m.id, m.handle);
+        return c.json({ ok: true, login, refreshed: 1 });
+      } catch (err) {
+        return c.json({ ok: false, login, error: String(err) }, 500);
+      }
+    }
+    const summary = await leetcodeTick();
+    return c.json({ ok: true, summary });
   });

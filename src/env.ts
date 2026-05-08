@@ -17,6 +17,9 @@ const schema = z.object({
   ADMIN_PASSWORD: z.string().optional(),
 
   FIVED_ORG: z.string().default("fived-studio"),
+
+  // LeetCode poller — interval in minutes; 0 disables.
+  LEETCODE_POLL_INTERVAL_MIN: z.coerce.number().min(0).default(360),
 });
 
 export const env = schema.parse(process.env);

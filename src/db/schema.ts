@@ -31,6 +31,7 @@ export const members = pgTable("members", {
     }>()
     .default({ weekend: false, latenight: false, privateRepos: false, paused: false })
     .notNull(),
+  leetcodeHandle: text("leetcode_handle"),
 });
 
 export const repos = pgTable("repos", {
@@ -104,6 +105,32 @@ export const memberBios = pgTable(
   (t) => ({ pk: primaryKey({ columns: [t.memberId, t.generatedAt] }) }),
 );
 
+export const leetcodeStats = pgTable("leetcode_stats", {
+  memberId: uuid("member_id")
+    .primaryKey()
+    .references(() => members.id, { onDelete: "cascade" }),
+  handle: text("handle").notNull(),
+  totalSolved: integer("total_solved").notNull().default(0),
+  easySolved: integer("easy_solved").notNull().default(0),
+  mediumSolved: integer("medium_solved").notNull().default(0),
+  hardSolved: integer("hard_solved").notNull().default(0),
+  totalEasy: integer("total_easy").notNull().default(0),
+  totalMedium: integer("total_medium").notNull().default(0),
+  totalHard: integer("total_hard").notNull().default(0),
+  ranking: integer("ranking"),
+  reputation: integer("reputation").notNull().default(0),
+  contestRating: integer("contest_rating"),
+  contestGlobalRanking: integer("contest_global_ranking"),
+  contestAttended: integer("contest_attended").notNull().default(0),
+  streak: integer("streak").notNull().default(0),
+  totalActiveDays: integer("total_active_days").notNull().default(0),
+  submissionCalendar: jsonb("submission_calendar").$type<Record<string, number>>(),
+  languageStats: jsonb("language_stats").$type<Array<{ languageName: string; problemsSolved: number }>>(),
+  fetchedAt: timestamp("fetched_at", { withTimezone: true }).defaultNow().notNull(),
+  lastError: text("last_error"),
+});
+
 export type Member = typeof members.$inferSelect;
 export type Event = typeof events.$inferSelect;
 export type Repo = typeof repos.$inferSelect;
+export type LeetcodeStats = typeof leetcodeStats.$inferSelect;

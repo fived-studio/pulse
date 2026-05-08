@@ -1,6 +1,7 @@
 import { app } from "./server";
 import { env } from "./env";
 import { startPoller } from "./workers/poll";
+import { startLeetcodePoller } from "./workers/leetcode-poll";
 
 const server = Bun.serve({
   port: env.PORT,
@@ -9,6 +10,7 @@ const server = Bun.serve({
 });
 
 startPoller();
+if (env.LEETCODE_POLL_INTERVAL_MIN > 0) startLeetcodePoller();
 
 console.log(`▲ Pulse listening on ${server.url}`);
 console.log(`  health: ${server.url}admin/health`);
