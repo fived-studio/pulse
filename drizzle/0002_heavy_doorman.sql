@@ -1,0 +1,1 @@
+ALTER TABLE "leetcode_stats" ADD COLUMN "badges" jsonb;

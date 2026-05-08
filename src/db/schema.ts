@@ -126,6 +126,13 @@ export const leetcodeStats = pgTable("leetcode_stats", {
   totalActiveDays: integer("total_active_days").notNull().default(0),
   submissionCalendar: jsonb("submission_calendar").$type<Record<string, number>>(),
   languageStats: jsonb("language_stats").$type<Array<{ languageName: string; problemsSolved: number }>>(),
+  badges: jsonb("badges").$type<Array<{
+    id: string;
+    name: string;
+    icon: string;
+    category: string;
+    creationDate: string;
+  }>>(),
   fetchedAt: timestamp("fetched_at", { withTimezone: true }).defaultNow().notNull(),
   lastError: text("last_error"),
 });

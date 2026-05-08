@@ -47,6 +47,7 @@ export const leetcodeRoute = new Hono()
         contestAttended: leetcodeStats.contestAttended,
         streak: leetcodeStats.streak,
         totalActiveDays: leetcodeStats.totalActiveDays,
+        badges: leetcodeStats.badges,
         weighted,
         fetchedAt: leetcodeStats.fetchedAt,
         lastError: leetcodeStats.lastError,
@@ -89,6 +90,7 @@ export const leetcodeRoute = new Hono()
         totalActiveDays: leetcodeStats.totalActiveDays,
         submissionCalendar: leetcodeStats.submissionCalendar,
         languageStats: leetcodeStats.languageStats,
+        badges: leetcodeStats.badges,
         fetchedAt: leetcodeStats.fetchedAt,
         lastError: leetcodeStats.lastError,
       })
