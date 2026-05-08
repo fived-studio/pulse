@@ -144,6 +144,7 @@ export async function refreshOne(memberId: string, handle: string): Promise<void
         totalActiveDays: snap.totalActiveDays,
         submissionCalendar: snap.submissionCalendar,
         languageStats: snap.languageStats,
+        badges: snap.badges,
         fetchedAt: new Date(),
         lastError: null,
       },
