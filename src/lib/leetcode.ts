@@ -142,6 +142,36 @@ const Q_LANGS = /* GraphQL */ `
   }
 `;
 
+const Q_BADGES = /* GraphQL */ `
+  query userBadges($username: String!) {
+    matchedUser(username: $username) {
+      badges {
+        id
+        displayName
+        icon
+        category
+        creationDate
+      }
+    }
+  }
+`;
+
+export type LeetcodeBadge = {
+  id: string;
+  name: string;
+  icon: string;
+  category: string;
+  creationDate: string;
+};
+
+function normalizeBadgeIcon(icon: string): string {
+  if (!icon) return icon;
+  if (icon.startsWith("http://") || icon.startsWith("https://")) return icon;
+  if (icon.startsWith("//")) return `https:${icon}`;
+  if (icon.startsWith("/")) return `https://leetcode.com${icon}`;
+  return icon;
+}
+
 // ---- Public types -------------------------------------------------------
 
 export type LeetcodeSnapshot = {
@@ -164,6 +194,7 @@ export type LeetcodeSnapshot = {
   totalActiveDays: number;
   submissionCalendar: Record<string, number>;
   languageStats: Array<{ languageName: string; problemsSolved: number }>;
+  badges: LeetcodeBadge[];
 };
 
 // ---- Fetch -------------------------------------------------------------
@@ -219,16 +250,28 @@ export async function fetchLeetcodeSnapshot(handle: string): Promise<LeetcodeSna
       languageProblemCount: Array<{ languageName: string; problemsSolved: number }>;
     } | null;
   };
+  type BadgesResp = {
+    matchedUser: {
+      badges: Array<{
+        id: string;
+        displayName: string;
+        icon: string;
+        category: string;
+        creationDate: string;
+      }>;
+    } | null;
+  };
 
   // Calendar query is per-year. To populate the past 365 days we need both
   // the current year and the previous year, then merge the keys.
   const thisYear = new Date().getUTCFullYear();
   const lastYear = thisYear - 1;
-  const [contest, calThis, calPrev, langs] = await Promise.allSettled([
+  const [contest, calThis, calPrev, langs, badges] = await Promise.allSettled([
     withRetry(() => gql<ContestResp>(Q_CONTEST, { username }, "userContestRankingInfo")),
     withRetry(() => gql<CalendarResp>(Q_CALENDAR, { username, year: thisYear }, "UserProfileCalendar")),
     withRetry(() => gql<CalendarResp>(Q_CALENDAR, { username, year: lastYear }, "UserProfileCalendar")),
     withRetry(() => gql<LangsResp>(Q_LANGS, { username }, "languageStats")),
+    withRetry(() => gql<BadgesResp>(Q_BADGES, { username }, "userBadges")),
   ]);
 
   const contestData = contest.status === "fulfilled" ? contest.value.userContestRanking : null;
@@ -281,6 +324,17 @@ export async function fetchLeetcodeSnapshot(handle: string): Promise<LeetcodeSna
       ? langs.value.matchedUser.languageProblemCount
       : [];
 
+  const badgeList: LeetcodeBadge[] =
+    badges.status === "fulfilled" && badges.value.matchedUser
+      ? badges.value.matchedUser.badges.map((b) => ({
+          id: b.id,
+          name: b.displayName,
+          icon: normalizeBadgeIcon(b.icon),
+          category: b.category,
+          creationDate: b.creationDate,
+        }))
+      : [];
+
   return {
     handle: username,
     realName: profile.matchedUser.profile.realName ?? null,
@@ -301,6 +355,7 @@ export async function fetchLeetcodeSnapshot(handle: string): Promise<LeetcodeSna
     totalActiveDays,
     submissionCalendar: calendarMap,
     languageStats: langStats,
+    badges: badgeList,
   };
 }
 

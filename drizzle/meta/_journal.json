@@ -15,6 +15,13 @@
       "when": 1778230382854,
       "tag": "0001_spicy_tusk",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1778235436850,
+      "tag": "0002_heavy_doorman",
+      "breakpoints": true
     }
   ]
 }
