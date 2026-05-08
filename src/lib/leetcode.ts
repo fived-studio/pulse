@@ -220,23 +220,62 @@ export async function fetchLeetcodeSnapshot(handle: string): Promise<LeetcodeSna
     } | null;
   };
 
-  const year = new Date().getUTCFullYear();
-  const [contest, calendar, langs] = await Promise.allSettled([
+  // Calendar query is per-year. To populate the past 365 days we need both
+  // the current year and the previous year, then merge the keys.
+  const thisYear = new Date().getUTCFullYear();
+  const lastYear = thisYear - 1;
+  const [contest, calThis, calPrev, langs] = await Promise.allSettled([
     withRetry(() => gql<ContestResp>(Q_CONTEST, { username }, "userContestRankingInfo")),
-    withRetry(() => gql<CalendarResp>(Q_CALENDAR, { username, year }, "UserProfileCalendar")),
+    withRetry(() => gql<CalendarResp>(Q_CALENDAR, { username, year: thisYear }, "UserProfileCalendar")),
+    withRetry(() => gql<CalendarResp>(Q_CALENDAR, { username, year: lastYear }, "UserProfileCalendar")),
     withRetry(() => gql<LangsResp>(Q_LANGS, { username }, "languageStats")),
   ]);
 
   const contestData = contest.status === "fulfilled" ? contest.value.userContestRanking : null;
-  const calendarRaw = calendar.status === "fulfilled" ? calendar.value.matchedUser?.userCalendar : null;
-  const calendarMap: Record<string, number> = (() => {
-    if (!calendarRaw?.submissionCalendar) return {};
+
+  function parseCal(s: PromiseSettledResult<CalendarResp>): Record<string, number> {
+    if (s.status !== "fulfilled") return {};
+    const raw = s.value.matchedUser?.userCalendar?.submissionCalendar;
+    if (!raw) return {};
     try {
-      return JSON.parse(calendarRaw.submissionCalendar) as Record<string, number>;
+      return JSON.parse(raw) as Record<string, number>;
     } catch {
       return {};
     }
+  }
+  const calendarMap: Record<string, number> = { ...parseCal(calPrev), ...parseCal(calThis) };
+
+  // Compute streak + active days from the merged 365-day window so the
+  // numbers match what the heatmap actually shows. Past LeetCode-returned
+  // `streak` was per-queried-year, which made early-Jan look like a full
+  // reset every January.
+  const cutoff = (() => {
+    const t = new Date();
+    const today = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate()));
+    today.setUTCDate(today.getUTCDate() - 364);
+    return Math.floor(today.getTime() / 1000);
   })();
+  const todayEpoch = (() => {
+    const t = new Date();
+    return Math.floor(Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate()) / 1000);
+  })();
+
+  let totalActiveDays = 0;
+  let maxStreak = 0;
+  let currentStreak = 0;
+  // Walk every day in the 365-day window so gaps reset the streak even when
+  // the calendar map omits zero-count days.
+  for (let e = cutoff; e <= todayEpoch; e += 86400) {
+    const count = calendarMap[String(e)] ?? 0;
+    if (count > 0) {
+      totalActiveDays += 1;
+      currentStreak += 1;
+      if (currentStreak > maxStreak) maxStreak = currentStreak;
+    } else {
+      currentStreak = 0;
+    }
+  }
+
   const langStats =
     langs.status === "fulfilled" && langs.value.matchedUser
       ? langs.value.matchedUser.languageProblemCount
@@ -258,8 +297,8 @@ export async function fetchLeetcodeSnapshot(handle: string): Promise<LeetcodeSna
     contestRating: contestData ? Math.round(contestData.rating) : null,
     contestGlobalRanking: contestData?.globalRanking ?? null,
     contestAttended: contestData?.attendedContestsCount ?? 0,
-    streak: calendarRaw?.streak ?? 0,
-    totalActiveDays: calendarRaw?.totalActiveDays ?? 0,
+    streak: maxStreak,
+    totalActiveDays,
     submissionCalendar: calendarMap,
     languageStats: langStats,
   };
