@@ -10,8 +10,8 @@ import { LeetcodeNotFoundError } from "~/lib/leetcode";
 
 const FIVED_MEMBERS = [
   { githubLogin: "hgbaooo", displayName: "Huỳnh Gia Bảo", role: "Fullstack Engineer", leetcodeHandle: "hgbaooo" },
-  { githubLogin: "nquynqthanq", displayName: "Nguyễn Quốc Thắng", role: "Frontend · UI/UX", leetcodeHandle: "nguyqthanq" },
-  { githubLogin: "thvnhtai", displayName: "Nguyễn Thành Tài", role: "Frontend · UI/UX", leetcodeHandle: "thvnhtai" },
+  { githubLogin: "nquynqthanq", displayName: "Nguyễn Quốc Thắng", role: "Fullstack Engineer", leetcodeHandle: "nguyqthanq" },
+  { githubLogin: "thvnhtai", displayName: "Nguyễn Thành Tài", role: "Fullstack Engineer", leetcodeHandle: "thvnhtai" },
   { githubLogin: "sloweyyy", displayName: "Trương Lê Vĩnh Phúc", role: "Product · DevOps · Fullstack", leetcodeHandle: "slowey" },
   { githubLogin: "TrTueTah", displayName: "Trần Tuệ Tánh", role: "Fullstack Engineer", leetcodeHandle: "tanhdeptrai113" },
 ];
@@ -58,10 +58,15 @@ export const adminRoute = new Hono()
       )
       .onConflictDoUpdate({
         target: members.githubLogin,
-        // backfill leetcode handles on existing rows; don't clobber other fields
-        set: { leetcodeHandle: sql`excluded.leetcode_handle` },
+        // Backfill role + leetcode handle + display name on existing rows.
+        // Avatar + githubId stay untouched on subsequent runs.
+        set: {
+          displayName: sql`excluded.display_name`,
+          role: sql`excluded.role`,
+          leetcodeHandle: sql`excluded.leetcode_handle`,
+        },
       })
-      .returning({ login: members.githubLogin, leetcodeHandle: members.leetcodeHandle });
+      .returning({ login: members.githubLogin, role: members.role, leetcodeHandle: members.leetcodeHandle });
     return c.json({ ok: true, members: upserted });
   })
   .post("/test-event", async (c) => {
