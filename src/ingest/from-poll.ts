@@ -117,6 +117,12 @@ function normalizePolled(ev: GhEvent, repoFullName: string) {
       const size = Number(p.size ?? 0);
       const arr = (p.commits as unknown[]) ?? [];
       const n = distinct || size || arr.length;
+      // 0-commit pushes are branch deletes (after = 000…) or no-op
+      // force-pushes that didn't change the tip — neither is interesting
+      // activity, drop them so the feed isn't full of "0 commits pushed".
+      if (n === 0) {
+        return { eventType: null as string | null, summary: "", occurredAt, commitCount: 0 };
+      }
       return {
         eventType: "push",
         summary: `${n} commit${n === 1 ? "" : "s"} pushed to ${repoFullName} (${ref})`,
