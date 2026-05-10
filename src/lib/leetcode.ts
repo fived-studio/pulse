@@ -262,16 +262,19 @@ export async function fetchLeetcodeSnapshot(handle: string): Promise<LeetcodeSna
     } | null;
   };
 
-  // Calendar query is per-year. To populate the past 365 days we need both
-  // the current year and the previous year, then merge the keys.
+  // Calendar query is per-year. We fetch N years (env-configured) and merge
+  // the keyed maps so the stored calendar covers the full history we want
+  // to render. Default N=3 (current + 2 prior).
   const thisYear = new Date().getUTCFullYear();
-  const lastYear = thisYear - 1;
-  const [contest, calThis, calPrev, langs, badges] = await Promise.allSettled([
+  const yearsToFetch = Math.max(1, Math.min(8, Number(process.env.LEETCODE_CALENDAR_YEARS ?? 3)));
+  const years = Array.from({ length: yearsToFetch }, (_, i) => thisYear - i);
+  const [contest, langs, badges, ...calRes] = await Promise.allSettled([
     withRetry(() => gql<ContestResp>(Q_CONTEST, { username }, "userContestRankingInfo")),
-    withRetry(() => gql<CalendarResp>(Q_CALENDAR, { username, year: thisYear }, "UserProfileCalendar")),
-    withRetry(() => gql<CalendarResp>(Q_CALENDAR, { username, year: lastYear }, "UserProfileCalendar")),
     withRetry(() => gql<LangsResp>(Q_LANGS, { username }, "languageStats")),
     withRetry(() => gql<BadgesResp>(Q_BADGES, { username }, "userBadges")),
+    ...years.map((year) =>
+      withRetry(() => gql<CalendarResp>(Q_CALENDAR, { username, year }, "UserProfileCalendar")),
+    ),
   ]);
 
   const contestData = contest.status === "fulfilled" ? contest.value.userContestRanking : null;
@@ -286,16 +289,20 @@ export async function fetchLeetcodeSnapshot(handle: string): Promise<LeetcodeSna
       return {};
     }
   }
-  const calendarMap: Record<string, number> = { ...parseCal(calPrev), ...parseCal(calThis) };
+  // Merge oldest → newest so newer values win on the (rare) overlap.
+  const calendarMap: Record<string, number> = {};
+  for (let i = calRes.length - 1; i >= 0; i--) Object.assign(calendarMap, parseCal(calRes[i]!));
 
-  // Compute streak + active days from the merged 365-day window so the
-  // numbers match what the heatmap actually shows. Past LeetCode-returned
-  // `streak` was per-queried-year, which made early-Jan look like a full
-  // reset every January.
+  // Compute streak + active days from the merged window so the numbers
+  // match the visible calendar. Window length scales with how many years
+  // we fetched — default 365 (1Y) since that's still LeetCode's headline
+  // metric, but with multi-year calendars stored, the frontend can render
+  // longer views off the same data.
+  const windowDays = 365;
   const cutoff = (() => {
     const t = new Date();
     const today = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate()));
-    today.setUTCDate(today.getUTCDate() - 364);
+    today.setUTCDate(today.getUTCDate() - (windowDays - 1));
     return Math.floor(today.getTime() / 1000);
   })();
   const todayEpoch = (() => {

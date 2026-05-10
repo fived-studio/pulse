@@ -20,6 +20,11 @@ const schema = z.object({
 
   // LeetCode poller — interval in minutes; 0 disables.
   LEETCODE_POLL_INTERVAL_MIN: z.coerce.number().min(0).default(360),
+
+  // Number of past years of submission calendar to fetch. LeetCode's
+  // userCalendar query is per-year, so this maps directly to N HTTP calls
+  // per refresh. 3 = current + 2 prior, balanced against rate-limit budget.
+  LEETCODE_CALENDAR_YEARS: z.coerce.number().min(1).max(8).default(3),
 });
 
 export const env = schema.parse(process.env);
