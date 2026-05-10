@@ -66,6 +66,43 @@ export const leetcodeRoute = new Hono()
       },
     });
   })
+  .get("/all", async (c) => {
+    // Single-shot endpoint that returns the full snapshot (incl. calendar +
+    // badges) for every member with a leetcode handle. Used by the static
+    // build to avoid fanning N parallel /v1/leetcode/:login requests at
+    // Cloud Run, which used to drop a few under autoscaler back-pressure.
+    const rows = await db
+      .select({
+        login: members.githubLogin,
+        displayName: members.displayName,
+        avatar: members.avatarUrl,
+        handle: leetcodeStats.handle,
+        totalSolved: leetcodeStats.totalSolved,
+        easy: leetcodeStats.easySolved,
+        medium: leetcodeStats.mediumSolved,
+        hard: leetcodeStats.hardSolved,
+        totalEasy: leetcodeStats.totalEasy,
+        totalMedium: leetcodeStats.totalMedium,
+        totalHard: leetcodeStats.totalHard,
+        ranking: leetcodeStats.ranking,
+        reputation: leetcodeStats.reputation,
+        contestRating: leetcodeStats.contestRating,
+        contestGlobalRanking: leetcodeStats.contestGlobalRanking,
+        contestAttended: leetcodeStats.contestAttended,
+        streak: leetcodeStats.streak,
+        totalActiveDays: leetcodeStats.totalActiveDays,
+        submissionCalendar: leetcodeStats.submissionCalendar,
+        languageStats: leetcodeStats.languageStats,
+        badges: leetcodeStats.badges,
+        fetchedAt: leetcodeStats.fetchedAt,
+        lastError: leetcodeStats.lastError,
+      })
+      .from(leetcodeStats)
+      .innerJoin(members, eq(members.id, leetcodeStats.memberId))
+      .where(isNotNull(members.leetcodeHandle));
+
+    return c.json({ data: rows });
+  })
   .get("/:login", async (c) => {
     const login = c.req.param("login");
     const [row] = await db
