@@ -178,4 +178,15 @@ export const adminRoute = new Hono()
     }
     const summary = await leetcodeTick();
     return c.json({ ok: true, summary });
+  })
+  .post("/cleanup-zero-pushes", async (c) => {
+    // One-shot cleanup of "0 commits pushed" events that landed before
+    // the ingest paths started dropping them. These come from branch
+    // deletes / no-op force-pushes and clutter the feed. Safe to re-run.
+    const result = await db.execute(
+      sql`DELETE FROM events
+          WHERE event_type = 'push'
+            AND summary LIKE '0 commits pushed to %'`,
+    );
+    return c.json({ ok: true, deleted: (result as unknown as { count?: number }).count ?? null });
   });

@@ -170,12 +170,18 @@ function normalize(
     case "push": {
       const ref = payload.ref?.replace("refs/heads/", "") ?? "?";
       const n = payload.commits?.length ?? 0;
+      const occurredAt = payload.head_commit?.timestamp
+        ? new Date(payload.head_commit.timestamp)
+        : now;
+      // 0-commit pushes are branch deletes (deleted: true / after = 000…)
+      // or no-op force-pushes — drop them, they clutter the feed.
+      if (n === 0 || payload.deleted === true) {
+        return { eventType: null, summary: "", occurredAt };
+      }
       return {
         eventType: "push",
         summary: `${n} commit${n === 1 ? "" : "s"} pushed to ${repoFullName} (${ref})`,
-        occurredAt: payload.head_commit?.timestamp
-          ? new Date(payload.head_commit.timestamp)
-          : now,
+        occurredAt,
       };
     }
     case "pull_request": {
