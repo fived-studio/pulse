@@ -13,7 +13,7 @@ const FIVED_MEMBERS = [
   { githubLogin: "nquynqthanq", displayName: "Nguyễn Quốc Thắng", role: "Fullstack Engineer", leetcodeHandle: "nguyqthanq" },
   { githubLogin: "thvnhtai", displayName: "Nguyễn Thành Tài", role: "Fullstack Engineer", leetcodeHandle: "thvnhtai" },
   { githubLogin: "sloweyyy", displayName: "Trương Lê Vĩnh Phúc", role: "Product · DevOps · Fullstack", leetcodeHandle: "slowey" },
-  { githubLogin: "slowey-katalon", displayName: "Trương Lê Vĩnh Phúc", role: "Product · DevOps · Fullstack", leetcodeHandle: null },
+  { githubLogin: "slowey-katalon", displayName: "Trương Lê Vĩnh Phúc", role: "Product · DevOps · Fullstack", leetcodeHandle: "slowey" },
   { githubLogin: "TrTueTah", displayName: "Trần Tuệ Tánh", role: "Fullstack Engineer", leetcodeHandle: "tanhdeptrai113" },
 ];
 
