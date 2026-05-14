@@ -16,7 +16,9 @@ const FIVED_MEMBERS = [
   { githubLogin: "TrTueTah", displayName: "Trần Tuệ Tánh", role: "Fullstack Engineer", leetcodeHandle: "tanhdeptrai113" },
   // Keep new entries at the end — `githubId` is derived from array index, so
   // inserting in the middle collides with existing rows' unique github_id.
-  { githubLogin: "slowey-katalon", displayName: "Trương Lê Vĩnh Phúc", role: "Product · DevOps · Fullstack", leetcodeHandle: "slowey" },
+  // slowey-katalon shares a LeetCode handle with sloweyyy (same person, work
+  // account). Leaving the handle set creates a duplicate row on the leaderboard.
+  { githubLogin: "slowey-katalon", displayName: "Trương Lê Vĩnh Phúc", role: "Product · DevOps · Fullstack", leetcodeHandle: null as string | null },
 ];
 
 export const adminRoute = new Hono()
